@@ -1,10 +1,9 @@
-// frontend/src/hooks/useSocket.js
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import { io } from 'socket.io-client'
 import useAuthStore from '../store/authStore.js'
 import useChatStore from '../store/chatStore.js'
 
-let socketInstance = null  // module-level singleton
+let socketInstance = null
 
 const useSocket = () => {
   const { authUser } = useAuthStore()
@@ -20,7 +19,6 @@ const useSocket = () => {
 
   useEffect(() => {
     if (!authUser) {
-      // User logged out — disconnect socket
       if (socketInstance) {
         socketInstance.disconnect()
         socketInstance = null
@@ -28,14 +26,13 @@ const useSocket = () => {
       return
     }
 
-    // Connect to socket server
     socketInstance = io(import.meta.env.VITE_SOCKET_URL, {
-  withCredentials: true,
-  transports: ['websocket'],
-  auth: {
-    token: localStorage.getItem('token'),
-  },
-})
+      withCredentials: true,
+      transports: ['websocket', 'polling'],
+      auth: {
+        token: localStorage.getItem('token'),
+      },
+    })
 
     socketInstance.on('connect', () => {
       console.log('Socket connected:', socketInstance.id)
@@ -45,38 +42,14 @@ const useSocket = () => {
       console.error('Socket connection error:', err.message)
     })
 
-    // ── Incoming events ──────────────────────────────────────
-    socketInstance.on('users:online', (userIds) => {
-      setOnlineUsers(userIds)
-    })
-
-    socketInstance.on('user:online', (data) => {
-      updateUserOnlineStatus({ userId: data.userId, isOnline: true })
-    })
-
-    socketInstance.on('user:offline', (data) => {
-      updateUserOnlineStatus({ userId: data.userId, isOnline: false })
-    })
-
-    socketInstance.on('message:new', (message) => {
-      addMessage(message)
-    })
-
-    socketInstance.on('message:edited', (message) => {
-      updateMessage(message)
-    })
-
-    socketInstance.on('message:deleted', (data) => {
-      removeMessage(data)
-    })
-
-    socketInstance.on('typing:update', (data) => {
-      setTyping(data)
-    })
-
-    socketInstance.on('conversation:new', (conversation) => {
-      addConversation(conversation)
-    })
+    socketInstance.on('users:online', setOnlineUsers)
+    socketInstance.on('user:online', (data) => updateUserOnlineStatus({ userId: data.userId, isOnline: true }))
+    socketInstance.on('user:offline', (data) => updateUserOnlineStatus({ userId: data.userId, isOnline: false }))
+    socketInstance.on('message:new', addMessage)
+    socketInstance.on('message:edited', updateMessage)
+    socketInstance.on('message:deleted', removeMessage)
+    socketInstance.on('typing:update', setTyping)
+    socketInstance.on('conversation:new', addConversation)
 
     return () => {
       socketInstance?.off('users:online')
@@ -93,6 +66,5 @@ const useSocket = () => {
   return socketInstance
 }
 
-// Export getter so other components can emit events
 export const getSocket = () => socketInstance
 export default useSocket
