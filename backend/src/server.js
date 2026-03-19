@@ -20,9 +20,15 @@ import './models/User.model.js';
 import './models/Conversation.model.js';
 import './models/Message.model.js';
 
-
 const app = express();
 const httpServer = createServer(app);
+
+// ✅ DEFINE FIRST (VERY IMPORTANT)
+const allowedOrigins = [
+  process.env.CLIENT_URL,
+  'http://localhost:5173',
+  'http://localhost:5174',
+].filter(Boolean);
 
 // ✅ Socket.io setup
 const io = new Server(httpServer, {
@@ -34,13 +40,7 @@ const io = new Server(httpServer, {
   pingTimeout: 60000,
 });
 
-// ✅ Middleware
-const allowedOrigins = [
-  process.env.CLIENT_URL,
-  'http://localhost:5173',
-  'http://localhost:5174',
-];
-
+// ✅ Middleware (CORS)
 app.use(cors({
   origin: function (origin, callback) {
     if (!origin) return callback(null, true);
@@ -48,15 +48,16 @@ app.use(cors({
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     } else {
+      console.log('Blocked by CORS:', origin); // debug
       return callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true,
 }));
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
-
 
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
@@ -98,7 +99,7 @@ app.use((err, req, res, next) => {
 // ✅ Initialize socket
 initSocket(io);
 
-// ✅ Start server AFTER DB connection (best practice)
+// ✅ Start server AFTER DB connection
 const PORT = process.env.PORT || 5000;
 
 const startServer = async () => {
