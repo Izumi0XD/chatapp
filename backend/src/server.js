@@ -27,7 +27,7 @@ const httpServer = createServer(app);
 // ✅ Socket.io setup
 const io = new Server(httpServer, {
   cors: {
-    origin: ['http://localhost:5173', 'http://localhost:5174'],
+    origin: allowedOrigins,
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -35,8 +35,22 @@ const io = new Server(httpServer, {
 });
 
 // ✅ Middleware
+const allowedOrigins = [
+  process.env.CLIENT_URL,
+  'http://localhost:5173',
+  'http://localhost:5174',
+];
+
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:5174'],
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    } else {
+      return callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
 }));
 app.use(express.json({ limit: '10mb' }));
