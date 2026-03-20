@@ -20,8 +20,8 @@ export default function ChatWindow({ onOpenSidebar }) {
   const [isUploading, setIsUploading] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
   const [msgSearch, setMsgSearch] = useState('')
-  const [callState, setCallState] = useState(null)
-  const [callType, setCallType] = useState(null)
+  const [callState, setCallState] = useState(null) // null | 'calling' | 'incoming' | 'active'
+  const [callType, setCallType] = useState(null)   // 'video' | 'audio'
   const [incomingCall, setIncomingCall] = useState(null)
   const [isMuted, setIsMuted] = useState(false)
   const [isCameraOff, setIsCameraOff] = useState(false)
@@ -35,15 +35,10 @@ export default function ChatWindow({ onOpenSidebar }) {
   const remoteVideoRef = useRef(null)
   const peerRef = useRef(null)
   const localStreamRef = useRef(null)
-  const callTypeRef = useRef(null) // tracks callType synchronously for answerCall
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
-
-  useEffect(() => {
-    callTypeRef.current = callType
-  }, [callType])
 
   useEffect(() => {
     const socket = getSocket()
@@ -54,9 +49,7 @@ export default function ChatWindow({ onOpenSidebar }) {
     const handleCallSignal = (data) => {
       if (data.type === 'offer') {
         setIncomingCall(data)
-        const ct = data.callType || 'video'
-        setCallType(ct)
-        callTypeRef.current = ct // set ref immediately, don't wait for state
+        setCallType(data.callType || 'video')
         setCallState('incoming')
       } else if (data.type === 'answer' && peerRef.current) {
         peerRef.current.setRemoteDescription(new RTCSessionDescription(data.signal))
@@ -193,11 +186,13 @@ export default function ChatWindow({ onOpenSidebar }) {
       if (isInitiator) {
         const offer = await peer.createOffer()
         await peer.setLocalDescription(offer)
+        // FIX: Added conversationId
         getSocket()?.emit('call:signal', {
           to: targetUserId,
           signal: offer,
           type: 'offer',
           callType: type,
+          conversationId: activeConversation._id,
         })
       }
 
@@ -212,7 +207,6 @@ export default function ChatWindow({ onOpenSidebar }) {
   const startCall = async (type) => {
     if (!otherUser) return toast.error('Can only call in 1-on-1 chats')
     setCallType(type)
-    callTypeRef.current = type
     setCallState('calling')
     setIsMuted(false)
     setIsCameraOff(false)
@@ -223,27 +217,32 @@ export default function ChatWindow({ onOpenSidebar }) {
 
   const answerCall = async () => {
     if (!incomingCall) return
-    const type = callTypeRef.current || 'video' // use ref — always current
     setCallState('active')
-    setCallType(type)
     setIsMuted(false)
     setIsCameraOff(false)
     try {
-      const peer = await createPeer(false, incomingCall.from, type)
+      const peer = await createPeer(false, incomingCall.from, callType)
       await peer.setRemoteDescription(new RTCSessionDescription(incomingCall.signal))
       const answer = await peer.createAnswer()
       await peer.setLocalDescription(answer)
+      // FIX: Added conversationId and callType
       getSocket()?.emit('call:signal', {
         to: incomingCall.from,
         signal: answer,
         type: 'answer',
+        callType: callType,
+        conversationId: activeConversation._id,
       })
       setIncomingCall(null)
     } catch {}
   }
 
-  const endCall = (skipSignal = false) => {
-    if (peerRef.current) { peerRef.current.close(); peerRef.current = null }
+  // skipSignal = true when called from the signal handler (remote ended)
+const endCall = (skipSignal = false) => {
+    if (peerRef.current) {
+      peerRef.current.close()
+      peerRef.current = null
+    }
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(t => t.stop())
       localStreamRef.current = null
@@ -253,12 +252,20 @@ export default function ChatWindow({ onOpenSidebar }) {
 
     if (!skipSignal) {
       const target = incomingCall?.from || otherUser?._id
-      if (target) getSocket()?.emit('call:signal', { to: target, signal: null, type: 'end' })
+      if (target) {
+        // FIX: Added conversationId and callType
+        getSocket()?.emit('call:signal', { 
+          to: target, 
+          signal: null, 
+          type: 'end',
+          callType: callType,
+          conversationId: activeConversation._id,
+        })
+      }
     }
 
     setCallState(null)
     setCallType(null)
-    callTypeRef.current = null
     setIncomingCall(null)
     setIsMuted(false)
     setIsCameraOff(false)
@@ -303,6 +310,7 @@ export default function ChatWindow({ onOpenSidebar }) {
         </div>
 
         <div className="flex items-center gap-1">
+          {/* Message search */}
           <button onClick={() => { setShowSearch(!showSearch); if (showSearch) { setMsgSearch(''); clearSearch() } }}
             className="p-2 rounded-xl text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -310,16 +318,21 @@ export default function ChatWindow({ onOpenSidebar }) {
             </svg>
           </button>
 
+          {/* Voice + Video call buttons (1-on-1 only) */}
           {!activeConversation.isGroup && (
             <>
+              {/* Voice call */}
               <button onClick={() => startCall('audio')}
-                className="p-2 rounded-xl text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="Voice call">
+                className="p-2 rounded-xl text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                title="Voice call">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
                 </svg>
               </button>
+              {/* Video call */}
               <button onClick={() => startCall('video')}
-                className="p-2 rounded-xl text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="Video call">
+                className="p-2 rounded-xl text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                title="Video call">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
                 </svg>
@@ -401,7 +414,7 @@ export default function ChatWindow({ onOpenSidebar }) {
         </button>
       </div>
 
-      {/* INCOMING CALL */}
+      {/* ── INCOMING CALL ── */}
       {callState === 'incoming' && incomingCall && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
           <div className="bg-white dark:bg-gray-800 rounded-3xl p-8 text-center shadow-2xl w-full max-w-sm">
@@ -411,13 +424,14 @@ export default function ChatWindow({ onOpenSidebar }) {
             />
             <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-1">{incomingCall.fromUsername}</h3>
             <p className="text-gray-400 mb-8 flex items-center justify-center gap-2">
-              {callTypeRef.current === 'audio' ? (
-                <><svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>Incoming voice call</>
+              {callType === 'audio' ? (
+                <><svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg> Incoming voice call</>
               ) : (
-                <><svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>Incoming video call</>
+                <><svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg> Incoming video call</>
               )}
             </p>
             <div className="flex gap-6 justify-center">
+              {/* Decline */}
               <div className="flex flex-col items-center gap-2">
                 <button onClick={() => endCall(false)}
                   className="w-16 h-16 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center text-white shadow-lg transition-colors">
@@ -427,6 +441,7 @@ export default function ChatWindow({ onOpenSidebar }) {
                 </button>
                 <span className="text-xs text-gray-400">Decline</span>
               </div>
+              {/* Accept */}
               <div className="flex flex-col items-center gap-2">
                 <button onClick={answerCall}
                   className="w-16 h-16 bg-green-500 hover:bg-green-600 rounded-full flex items-center justify-center text-white shadow-lg transition-colors">
@@ -441,15 +456,20 @@ export default function ChatWindow({ onOpenSidebar }) {
         </div>
       )}
 
-      {/* ACTIVE / CALLING OVERLAY */}
+      {/* ── ACTIVE / CALLING OVERLAY ── */}
       {(callState === 'active' || callState === 'calling') && (
         <div className="fixed inset-0 bg-gray-900 z-50 flex flex-col">
 
           {callType === 'video' ? (
+            /* Video call layout */
             <div className="relative flex-1 bg-black">
-              <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover"/>
+              {/* Remote video */}
+              <video ref={remoteVideoRef} autoPlay playsInline
+                className="w-full h-full object-cover"/>
+              {/* Local video PiP */}
               <video ref={localVideoRef} autoPlay playsInline muted
                 className="absolute bottom-4 right-4 w-32 h-24 rounded-2xl object-cover border-2 border-white shadow-xl"/>
+              {/* Calling overlay */}
               {callState === 'calling' && (
                 <div className="absolute inset-0 bg-gray-900/80 flex flex-col items-center justify-center">
                   <img
@@ -462,6 +482,7 @@ export default function ChatWindow({ onOpenSidebar }) {
               )}
             </div>
           ) : (
+            /* Voice call layout */
             <div className="flex-1 flex flex-col items-center justify-center bg-gradient-to-b from-gray-800 to-gray-900">
               <img
                 src={otherUser?.avatar || 'https://ui-avatars.com/api/?name=' + otherUser?.username + '&background=random&size=128'}
@@ -471,18 +492,23 @@ export default function ChatWindow({ onOpenSidebar }) {
               <p className="text-gray-400 text-sm">
                 {callState === 'calling' ? 'Calling...' : 'Voice call in progress'}
               </p>
-              <audio ref={remoteVideoRef} autoPlay/>
+              {/* Hidden audio elements for voice call */}
+              <video ref={remoteVideoRef} autoPlay playsInline className="hidden"/>
+              <video ref={localVideoRef} autoPlay playsInline muted className="hidden"/>
             </div>
           )}
 
-          {/* Controls */}
+          {/* Call controls bar */}
           <div className="px-8 py-6 bg-gray-900 flex items-center justify-center gap-6">
+            {/* Mute toggle */}
             <div className="flex flex-col items-center gap-1">
               <button onClick={toggleMute}
-                className={`w-14 h-14 rounded-full flex items-center justify-center transition-colors ${isMuted ? 'bg-red-500 hover:bg-red-600' : 'bg-gray-700 hover:bg-gray-600'}`}>
+                className={`w-14 h-14 rounded-full flex items-center justify-center transition-colors ${
+                  isMuted ? 'bg-red-500 hover:bg-red-600' : 'bg-gray-700 hover:bg-gray-600'
+                }`}>
                 {isMuted ? (
                   <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" clipRule="evenodd"/>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"/>
                   </svg>
                 ) : (
@@ -494,6 +520,7 @@ export default function ChatWindow({ onOpenSidebar }) {
               <span className="text-xs text-gray-400">{isMuted ? 'Unmute' : 'Mute'}</span>
             </div>
 
+            {/* End call */}
             <div className="flex flex-col items-center gap-1">
               <button onClick={() => endCall(false)}
                 className="w-16 h-16 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center text-white shadow-lg transition-colors">
@@ -504,10 +531,13 @@ export default function ChatWindow({ onOpenSidebar }) {
               <span className="text-xs text-gray-400">End</span>
             </div>
 
+            {/* Camera toggle (video calls only) */}
             {callType === 'video' && (
               <div className="flex flex-col items-center gap-1">
                 <button onClick={toggleCamera}
-                  className={`w-14 h-14 rounded-full flex items-center justify-center transition-colors ${isCameraOff ? 'bg-red-500 hover:bg-red-600' : 'bg-gray-700 hover:bg-gray-600'}`}>
+                  className={`w-14 h-14 rounded-full flex items-center justify-center transition-colors ${
+                    isCameraOff ? 'bg-red-500 hover:bg-red-600' : 'bg-gray-700 hover:bg-gray-600'
+                  }`}>
                   {isCameraOff ? (
                     <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2zM3 3l18 18"/>
