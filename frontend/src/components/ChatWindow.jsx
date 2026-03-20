@@ -7,7 +7,7 @@ import TypingIndicator from './TypingIndicator.jsx'
 import axios from '../utils/axios.js'
 import toast from 'react-hot-toast'
 
-const TENOR_KEY = 'AIzaSyAyimkuYQYF_FXVALexojRGux_QTAM2jGQ'
+const GIPHY_KEY = 'M5SjFIlAsidQcM08PgDe0wDqleDd7Bzf'
 
 export default function ChatWindow({ onBack }) {
   const { authUser } = useAuthStore()
@@ -145,19 +145,19 @@ export default function ChatWindow({ onBack }) {
   }
 
   const searchGifs = (q) => {
-    clearTimeout(gifDebounce.current)
-    gifDebounce.current = setTimeout(async () => {
-      try {
-        const term = q.trim() || 'trending'
-        const res = await fetch(
-          'https://tenor.googleapis.com/v2/search?q=' + term +
-          '&key=' + TENOR_KEY + '&limit=12&media_filter=gif,tinygif'
-        )
-        const data = await res.json()
-        setGifs(data.results || [])
-      } catch { setGifs([]) }
-    }, 400)
-  }
+  clearTimeout(gifDebounce.current)
+  gifDebounce.current = setTimeout(async () => {
+    try {
+      const term = q.trim()
+      const endpoint = term
+        ? 'https://api.giphy.com/v1/gifs/search?api_key=' + GIPHY_KEY + '&q=' + encodeURIComponent(term) + '&limit=12&rating=g'
+        : 'https://api.giphy.com/v1/gifs/trending?api_key=' + GIPHY_KEY + '&limit=12&rating=g'
+      const res = await fetch(endpoint)
+      const data = await res.json()
+      setGifs(data.data || [])
+    } catch { setGifs([]) }
+  }, 400)
+}
 
   const sendGif = async (gifUrl) => {
     setShowGifPicker(false)
@@ -454,11 +454,11 @@ export default function ChatWindow({ onBack }) {
           />
           <div className="grid grid-cols-3 gap-1 max-h-48 overflow-y-auto">
             {gifs.map(gif => (
-              <button key={gif.id} onClick={() => sendGif(gif.media_formats?.gif?.url || gif.url)}
-                className="rounded-lg overflow-hidden hover:opacity-80 transition-opacity">
-                <img src={gif.media_formats?.tinygif?.url || gif.url} className="w-full h-20 object-cover"/>
-              </button>
-            ))}
+  <button key={gif.id} onClick={() => sendGif(gif.images?.original?.url)}
+    className="rounded-lg overflow-hidden hover:opacity-80 transition-opacity">
+    <img src={gif.images?.fixed_height_small?.url} className="w-full h-20 object-cover"/>
+  </button>
+))}
             {gifs.length === 0 && gifSearch && (
               <p className="col-span-3 text-center text-gray-400 text-xs py-4">No GIFs found</p>
             )}
