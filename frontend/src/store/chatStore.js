@@ -10,6 +10,7 @@ const useChatStore = create((set, get) => ({
   typingUsers: {},
   isLoadingMessages: false,
   isSendingMessage: false,
+  replyingTo: null, // message being replied to
 
   fetchConversations: async () => {
     try {
@@ -21,20 +22,29 @@ const useChatStore = create((set, get) => ({
   },
 
   setActiveConversation: (conversation) => {
-    set({ activeConversation: conversation, messages: [] })
+    set({ activeConversation: conversation, messages: [], replyingTo: null })
   },
 
   openOrCreateConversation: async (recipientId) => {
     try {
       const { data } = await axios.post('/conversations', { recipientId })
       const exists = get().conversations.find(c => c._id === data._id)
-      if (!exists) {
-        set({ conversations: [data, ...get().conversations] })
-      }
+      if (!exists) set({ conversations: [data, ...get().conversations] })
       set({ activeConversation: data })
       return data
     } catch {
       toast.error('Failed to open conversation')
+    }
+  },
+
+  createGroupConversation: async ({ name, memberIds }) => {
+    try {
+      const { data } = await axios.post('/conversations/group', { name, memberIds })
+      set({ conversations: [data, ...get().conversations], activeConversation: data })
+      toast.success('Group created!')
+      return data
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to create group')
     }
   },
 
@@ -50,8 +60,7 @@ const useChatStore = create((set, get) => ({
     }
   },
 
-  // No optimistic add — socket delivers to everyone including sender
-  sendMessage: async ({ conversationId, content, messageType, mediaUrl }) => {
+  sendMessage: async ({ conversationId, content, messageType, mediaUrl, replyTo }) => {
     set({ isSendingMessage: true })
     try {
       await axios.post('/messages', {
@@ -59,7 +68,9 @@ const useChatStore = create((set, get) => ({
         content,
         messageType: messageType || 'text',
         mediaUrl,
+        replyTo,
       })
+      set({ replyingTo: null })
     } catch {
       toast.error('Failed to send message')
     } finally {
@@ -67,20 +78,16 @@ const useChatStore = create((set, get) => ({
     }
   },
 
-  // Socket delivers message to ALL participants including sender
-  // Simple dedup by _id — no double-checking conversation IDs
+  setReplyingTo: (message) => set({ replyingTo: message }),
+  clearReplyingTo: () => set({ replyingTo: null }),
+
   addMessage: (message) => {
     const { messages, activeConversation } = get()
-
     const convId = message.conversation?._id || message.conversation
-
     if (activeConversation?._id === convId) {
       const exists = messages.some(m => m._id === message._id)
-      if (!exists) {
-        set({ messages: [...messages, message] })
-      }
+      if (!exists) set({ messages: [...messages, message] })
     }
-
     set({
       conversations: get().conversations.map(c =>
         c._id === convId
@@ -102,6 +109,14 @@ const useChatStore = create((set, get) => ({
     set({
       messages: get().messages.map(m =>
         m._id === messageId ? { ...m, isDeleted: true, content: '' } : m
+      )
+    })
+  },
+
+  updateReactions: ({ messageId, reactions }) => {
+    set({
+      messages: get().messages.map(m =>
+        m._id === messageId ? { ...m, reactions } : m
       )
     })
   },
@@ -138,9 +153,7 @@ const useChatStore = create((set, get) => ({
 
   addConversation: (conversation) => {
     const exists = get().conversations.find(c => c._id === conversation._id)
-    if (!exists) {
-      set({ conversations: [conversation, ...get().conversations] })
-    }
+    if (!exists) set({ conversations: [conversation, ...get().conversations] })
   },
 }))
 

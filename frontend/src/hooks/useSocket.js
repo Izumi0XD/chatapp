@@ -50,6 +50,9 @@ const useSocket = () => {
     socketInstance.on('message:deleted', removeMessage)
     socketInstance.on('typing:update', setTyping)
     socketInstance.on('conversation:new', addConversation)
+    socketInstance.on('message:reaction', ({ messageId, reactions }) => {
+  useChatStore.getState().updateReactions({ messageId, reactions })
+})
 
     return () => {
       socketInstance?.off('users:online')
@@ -60,6 +63,8 @@ const useSocket = () => {
       socketInstance?.off('message:deleted')
       socketInstance?.off('typing:update')
       socketInstance?.off('conversation:new')
+      socketInstance?.off('message:reaction')
+      
     }
   }, [authUser])
 

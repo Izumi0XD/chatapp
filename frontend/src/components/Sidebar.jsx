@@ -12,107 +12,105 @@ export default function Sidebar() {
     activeConversation,
     setActiveConversation,
     fetchMessages,
-    onlineUsers = [], // ✅ safe default
+    onlineUsers = [],
     openOrCreateConversation,
+    createGroupConversation,
   } = useChatStore()
 
   const [search, setSearch] = useState('')
   const [searchResults, setSearchResults] = useState([])
   const [isSearching, setIsSearching] = useState(false)
-  const [darkMode, setDarkMode] = useState(
-    localStorage.getItem('theme') === 'dark'
-  )
-
+  const [darkMode, setDarkMode] = useState(localStorage.getItem('theme') === 'dark')
+  const [showGroupModal, setShowGroupModal] = useState(false)
+  const [groupName, setGroupName] = useState('')
+  const [groupMembers, setGroupMembers] = useState([]) // [{_id, username}]
+  const [memberSearch, setMemberSearch] = useState('')
+  const [memberResults, setMemberResults] = useState([])
   const debounceRef = useRef(null)
+  const memberDebounceRef = useRef(null)
 
-  // ✅ Apply saved theme
   useEffect(() => {
-    if (darkMode) {
-      document.documentElement.classList.add('dark')
-    } else {
-      document.documentElement.classList.remove('dark')
-    }
+    document.documentElement.classList.toggle('dark', darkMode)
   }, [darkMode])
 
-  // ✅ Toggle dark mode with persistence
   const toggleDark = () => {
-    const newMode = !darkMode
-    setDarkMode(newMode)
-    localStorage.setItem('theme', newMode ? 'dark' : 'light')
+    const next = !darkMode
+    setDarkMode(next)
+    localStorage.setItem('theme', next ? 'dark' : 'light')
   }
 
-  // ✅ Debounced search (FIXES API SPAM)
   const handleSearch = (e) => {
     const q = e.target.value
     setSearch(q)
-
     clearTimeout(debounceRef.current)
-
-    if (q.trim().length < 1) {
-      setSearchResults([])
-      return
-    }
-
+    if (!q.trim()) { setSearchResults([]); return }
     debounceRef.current = setTimeout(async () => {
       setIsSearching(true)
       try {
-        const { data } = await axios.get(`/users/search?q=${q}`)
+        const { data } = await axios.get('/users/search?q=' + q)
         setSearchResults(data)
-      } catch {
-        toast.error('Search failed')
-      } finally {
-        setIsSearching(false)
-      }
-    }, 400) // ✅ debounce
+      } catch { toast.error('Search failed') }
+      finally { setIsSearching(false) }
+    }, 400)
   }
 
-  // ✅ Cleanup debounce
-  useEffect(() => {
-    return () => clearTimeout(debounceRef.current)
-  }, [])
+  const handleMemberSearch = (e) => {
+    const q = e.target.value
+    setMemberSearch(q)
+    clearTimeout(memberDebounceRef.current)
+    if (!q.trim()) { setMemberResults([]); return }
+    memberDebounceRef.current = setTimeout(async () => {
+      try {
+        const { data } = await axios.get('/users/search?q=' + q)
+        setMemberResults(data.filter(u => !groupMembers.find(m => m._id === u._id)))
+      } catch {}
+    }, 400)
+  }
 
-  // ✅ Select user safely
+  const addMember = (user) => {
+    setGroupMembers(prev => [...prev, user])
+    setMemberResults([])
+    setMemberSearch('')
+  }
+
+  const removeMember = (userId) => {
+    setGroupMembers(prev => prev.filter(m => m._id !== userId))
+  }
+
+  const handleCreateGroup = async () => {
+    if (!groupName.trim()) return toast.error('Group name required')
+    if (groupMembers.length < 1) return toast.error('Add at least 1 member')
+    const conv = await createGroupConversation({
+      name: groupName,
+      memberIds: groupMembers.map(m => m._id),
+    })
+    if (conv) {
+      setShowGroupModal(false)
+      setGroupName('')
+      setGroupMembers([])
+      fetchMessages(conv._id)
+    }
+  }
+
   const handleSelectUser = async (user) => {
-    try {
-      setSearch('')
-      setSearchResults([])
-
-      const conv = await openOrCreateConversation(user._id)
-
-      if (conv) {
-        setActiveConversation(conv)
-        await fetchMessages(conv._id)
-      }
-    } catch {
-      toast.error('Failed to open chat')
-    }
+    setSearch('')
+    setSearchResults([])
+    const conv = await openOrCreateConversation(user._id)
+    if (conv) { setActiveConversation(conv); fetchMessages(conv._id) }
   }
 
-  const handleSelectConversation = async (conv) => {
-    try {
-      setActiveConversation(conv)
-      await fetchMessages(conv._id)
-    } catch {
-      toast.error('Failed to load messages')
-    }
+  const handleSelectConversation = (conv) => {
+    setActiveConversation(conv)
+    fetchMessages(conv._id)
   }
 
-  // ✅ Optimized helpers (no repeated find)
-  const getOtherUser = (conv) =>
-    conv.participants?.find((p) => p._id !== authUser?._id)
-
-  const getConvName = (conv) =>
-    conv.isGroup ? conv.groupName : getOtherUser(conv)?.username || 'Unknown'
-
+  const getOtherUser = (conv) => conv.participants?.find(p => p._id !== authUser?._id)
+  const getConvName = (conv) => conv.isGroup ? conv.groupName : getOtherUser(conv)?.username || 'Unknown'
   const getConvAvatar = (conv) => {
-    if (conv.isGroup) return conv.groupAvatar
+    if (conv.isGroup) return conv.groupAvatar || 'https://ui-avatars.com/api/?name=' + conv.groupName + '&background=random'
     const other = getOtherUser(conv)
-    return (
-      other?.avatar ||
-      `https://ui-avatars.com/api/?name=${getConvName(conv)}`
-    )
+    return other?.avatar || 'https://ui-avatars.com/api/?name=' + (other?.username || 'U') + '&background=random'
   }
-
   const isConvOnline = (conv) => {
     if (conv.isGroup) return false
     const other = getOtherUser(conv)
@@ -122,102 +120,168 @@ export default function Sidebar() {
   return (
     <div className="h-full flex flex-col bg-white dark:bg-gray-900">
 
-      {/* HEADER */}
+      {/* Header */}
       <div className="px-4 py-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
         <div className="flex items-center gap-3">
           <img
-            src={
-              authUser?.avatar ||
-              `https://ui-avatars.com/api/?name=${authUser?.username}`
-            }
-            className="w-9 h-9 rounded-full"
+            src={authUser?.avatar || 'https://ui-avatars.com/api/?name=' + authUser?.username + '&background=random'}
+            className="w-9 h-9 rounded-full object-cover"
           />
-          <span className="text-sm font-semibold text-gray-900 dark:text-white">
-            {authUser?.username}
-          </span>
+          <span className="text-sm font-semibold text-gray-900 dark:text-white">{authUser?.username}</span>
         </div>
-
-        <div className="flex gap-2">
-          <button onClick={toggleDark}>🌓</button>
-          <button onClick={logout}>🚪</button>
+        <div className="flex gap-2 items-center">
+          {/* New group button */}
+          <button
+            onClick={() => setShowGroupModal(true)}
+            className="p-2 rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            title="New group"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+            </svg>
+          </button>
+          <button onClick={toggleDark} className="p-2 rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700">
+            {darkMode ? '☀️' : '🌙'}
+          </button>
+          <button onClick={logout} className="p-2 rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+            </svg>
+          </button>
         </div>
       </div>
 
-      {/* SEARCH */}
+      {/* Search */}
       <div className="p-3">
         <input
           value={search}
           onChange={handleSearch}
           placeholder="Search users..."
-          className="w-full p-2 rounded bg-gray-100 dark:bg-gray-800"
+          className="w-full px-3 py-2 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
         />
       </div>
 
-      {/* SEARCH RESULTS */}
+      {/* Search results */}
       {searchResults.length > 0 && (
-        <div className="px-2 border-b">
-          {searchResults.map((user) => (
-            <button
-              key={user._id}
-              onClick={() => handleSelectUser(user)}
-              className="flex items-center gap-2 w-full p-2 hover:bg-gray-200 dark:hover:bg-gray-800"
-            >
-              <img
-                src={
-                  user.avatar ||
-                  `https://ui-avatars.com/api/?name=${user.username}`
-                }
-                className="w-8 h-8 rounded-full"
-              />
-              <span>{user.username}</span>
+        <div className="px-2 pb-2 border-b border-gray-100 dark:border-gray-700">
+          {searchResults.map(user => (
+            <button key={user._id} onClick={() => handleSelectUser(user)}
+              className="flex items-center gap-3 w-full px-2 py-2 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800">
+              <div className="relative">
+                <img src={user.avatar || 'https://ui-avatars.com/api/?name=' + user.username + '&background=random'}
+                  className="w-9 h-9 rounded-full object-cover"/>
+                {onlineUsers.includes(user._id) && (
+                  <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-white dark:border-gray-900"/>
+                )}
+              </div>
+              <div className="text-left">
+                <p className="text-sm font-medium text-gray-900 dark:text-white">{user.username}</p>
+                <p className="text-xs text-gray-400">{user.email}</p>
+              </div>
             </button>
           ))}
         </div>
       )}
 
-      {/* CONVERSATIONS */}
-      <div className="flex-1 overflow-y-auto">
+      {/* Conversations */}
+      <div className="flex-1 overflow-y-auto px-2 py-1">
         {conversations.length === 0 ? (
-          <p className="text-center text-gray-400 mt-10">
-            No conversations
-          </p>
+          <p className="text-center text-gray-400 mt-10 text-sm">No conversations yet</p>
         ) : (
-          conversations.map((conv) => (
-            <button
-              key={conv._id}
-              onClick={() => handleSelectConversation(conv)}
-              className={`flex w-full items-center gap-3 p-3 ${
+          conversations.map(conv => (
+            <button key={conv._id} onClick={() => handleSelectConversation(conv)}
+              className={`flex w-full items-center gap-3 px-2 py-3 rounded-xl mb-0.5 transition-colors ${
                 activeConversation?._id === conv._id
-                  ? 'bg-gray-200 dark:bg-gray-800'
-                  : ''
-              }`}
-            >
-              <img
-                src={getConvAvatar(conv)}
-                className="w-10 h-10 rounded-full"
-              />
-
-              <div className="flex-1 text-left">
-                <p>{getConvName(conv)}</p>
-
-                <p className="text-xs text-gray-400">
+                  ? 'bg-primary-50 dark:bg-primary-900/20'
+                  : 'hover:bg-gray-50 dark:hover:bg-gray-800'
+              }`}>
+              <div className="relative flex-shrink-0">
+                <img src={getConvAvatar(conv)} className="w-11 h-11 rounded-full object-cover"/>
+                {isConvOnline(conv) && (
+                  <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white dark:border-gray-900"/>
+                )}
+                {conv.isGroup && (
+                  <span className="absolute -bottom-0.5 -right-0.5 text-xs">👥</span>
+                )}
+              </div>
+              <div className="flex-1 min-w-0 text-left">
+                <div className="flex justify-between items-baseline">
+                  <p className="font-medium text-sm text-gray-900 dark:text-white truncate">{getConvName(conv)}</p>
+                  {conv.updatedAt && (
+                    <span className="text-xs text-gray-400 flex-shrink-0 ml-1">{format(new Date(conv.updatedAt), 'HH:mm')}</span>
+                  )}
+                </div>
+                <p className="text-xs text-gray-400 truncate mt-0.5">
                   {conv.lastMessage
-                    ? conv.lastMessage.messageType === 'image'
-                      ? '📷 Image'
+                    ? conv.lastMessage.isDeleted ? 'Message deleted'
+                      : conv.lastMessage.messageType === 'image' ? '📷 Image'
                       : conv.lastMessage.content
-                    : 'No messages'}
+                    : 'No messages yet'}
                 </p>
               </div>
-
-              {conv.updatedAt && (
-                <span className="text-xs text-gray-400">
-                  {format(new Date(conv.updatedAt), 'HH:mm')}
-                </span>
-              )}
             </button>
           ))
         )}
       </div>
+
+      {/* Group creation modal */}
+      {showGroupModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-xl">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">New Group</h2>
+
+            <input
+              value={groupName}
+              onChange={e => setGroupName(e.target.value)}
+              placeholder="Group name"
+              className="w-full px-3 py-2 rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+
+            {/* Selected members */}
+            {groupMembers.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-3">
+                {groupMembers.map(m => (
+                  <span key={m._id} className="flex items-center gap-1 bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 text-xs px-2 py-1 rounded-full">
+                    {m.username}
+                    <button onClick={() => removeMember(m._id)} className="hover:text-red-500">×</button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* Member search */}
+            <input
+              value={memberSearch}
+              onChange={handleMemberSearch}
+              placeholder="Search people to add..."
+              className="w-full px-3 py-2 rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+
+            {memberResults.length > 0 && (
+              <div className="border border-gray-100 dark:border-gray-700 rounded-xl overflow-hidden mb-3">
+                {memberResults.map(user => (
+                  <button key={user._id} onClick={() => addMember(user)}
+                    className="flex items-center gap-2 w-full px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm text-gray-900 dark:text-white">
+                    <img src={user.avatar || 'https://ui-avatars.com/api/?name=' + user.username + '&background=random'} className="w-7 h-7 rounded-full"/>
+                    {user.username}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="flex gap-2 mt-2">
+              <button onClick={() => { setShowGroupModal(false); setGroupName(''); setGroupMembers([]) }}
+                className="flex-1 py-2 rounded-xl border border-gray-200 dark:border-gray-600 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
+                Cancel
+              </button>
+              <button onClick={handleCreateGroup}
+                className="flex-1 py-2 rounded-xl bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium">
+                Create
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
