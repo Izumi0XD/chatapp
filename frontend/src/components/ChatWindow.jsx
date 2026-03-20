@@ -286,7 +286,7 @@ const endCall = (skipSignal = false) => {
   if (!activeConversation) return null
 
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-gray-900">
+    <div className="flex flex-col h-screen overflow-hidden bg-white dark:bg-gray-900">
 
       {/* Header */}
       <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700 flex items-center gap-3 flex-shrink-0 sticky top-0 z-10 bg-white dark:bg-gray-900">
@@ -363,7 +363,7 @@ const endCall = (skipSignal = false) => {
       )}
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-0.5">
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-0.5 overscroll-contain">
         {showSearch && searchQuery ? (
           searchResults.length === 0 ? (
             <div className="text-center text-gray-400 py-12 text-sm">No messages found</div>
