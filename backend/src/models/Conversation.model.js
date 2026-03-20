@@ -45,6 +45,13 @@ const conversationSchema = new mongoose.Schema(
       ref: 'Message',
     },
 
+
+    deletedBy: [{
+  type: mongoose.Schema.Types.ObjectId,
+  ref: 'User',
+  default: [],
+}],
+
     // Tracks unread count per user.
     // Structure: [{ user: ObjectId, count: Number }]
     // We increment when a message is sent, reset to 0 when user opens the chat.

@@ -1,25 +1,19 @@
-// backend/src/controllers/conversation.controller.js
 import Conversation from '../models/Conversation.model.js';
 import Message from '../models/Message.model.js';
 import User from '../models/User.model.js';
 
-// ─── GET ALL CONVERSATIONS ─────────────────────────────────────
-// GET /api/v1/conversations
-// Returns the chat list for the logged-in user
 export const getConversations = async (req, res) => {
   try {
     const conversations = await Conversation.find({
-      participants: { $in: [req.user._id] }, // user is a participant
+      participants: { $in: [req.user._id] },
+      deletedBy: { $nin: [req.user._id] }, // hide deleted conversations
     })
       .populate('participants', 'username avatar isOnline lastSeen')
       .populate({
         path: 'lastMessage',
-        populate: {
-          path: 'sender',
-          select: 'username avatar',
-        },
+        populate: { path: 'sender', select: 'username avatar' },
       })
-      .sort({ updatedAt: -1 }); // most recent first
+      .sort({ updatedAt: -1 });
 
     res.status(200).json(conversations);
   } catch (error) {
@@ -28,25 +22,14 @@ export const getConversations = async (req, res) => {
   }
 };
 
-// ─── GET OR CREATE CONVERSATION ────────────────────────────────
-// POST /api/v1/conversations
-// When user clicks on someone to chat — finds existing or creates new
 export const getOrCreateConversation = async (req, res) => {
   try {
     const { recipientId } = req.body;
     const senderId = req.user._id;
 
-    if (!recipientId) {
-      return res.status(400).json({ message: 'Recipient ID is required' });
-    }
+    if (!recipientId) return res.status(400).json({ message: 'Recipient ID is required' });
+    if (recipientId === senderId.toString()) return res.status(400).json({ message: 'Cannot chat with yourself' });
 
-    if (recipientId === senderId.toString()) {
-      return res.status(400).json({ message: 'Cannot chat with yourself' });
-    }
-
-    // Check if a 1-on-1 conversation already exists between these two users
-    // $all means the array must contain ALL of these values
-    // $size: 2 ensures it's exactly 2 participants (not a group)
     let conversation = await Conversation.findOne({
       isGroup: false,
       participants: { $all: [senderId, recipientId], $size: 2 },
@@ -54,20 +37,22 @@ export const getOrCreateConversation = async (req, res) => {
       .populate('participants', 'username avatar isOnline lastSeen')
       .populate('lastMessage');
 
-    // If it exists, return it
     if (conversation) {
+      // If user had deleted it, restore it
+      if (conversation.deletedBy?.includes(req.user._id)) {
+        await Conversation.findByIdAndUpdate(conversation._id, {
+          $pull: { deletedBy: req.user._id },
+        });
+      }
       return res.status(200).json(conversation);
     }
 
-    // Otherwise create a new one
     conversation = await Conversation.create({
       participants: [senderId, recipientId],
       isGroup: false,
     });
 
-    // Populate before returning so frontend gets full user objects
     await conversation.populate('participants', 'username avatar isOnline lastSeen');
-
     res.status(201).json(conversation);
   } catch (error) {
     console.error('Get or create conversation error:', error);
@@ -75,21 +60,14 @@ export const getOrCreateConversation = async (req, res) => {
   }
 };
 
-// ─── CREATE GROUP CHAT ─────────────────────────────────────────
-// POST /api/v1/conversations/group
 export const createGroupConversation = async (req, res) => {
   try {
     const { name, memberIds } = req.body;
-
     if (!name || !memberIds || memberIds.length < 2) {
-      return res.status(400).json({
-        message: 'Group name and at least 2 members are required',
-      });
+      return res.status(400).json({ message: 'Group name and at least 2 members are required' });
     }
 
-    // Always include the creator in the group
     const participants = [...new Set([req.user._id.toString(), ...memberIds])];
-
     const conversation = await Conversation.create({
       participants,
       isGroup: true,
@@ -99,15 +77,36 @@ export const createGroupConversation = async (req, res) => {
 
     await conversation.populate('participants', 'username avatar isOnline');
 
-    // Notify all members via socket that they were added to a group
     const io = req.app.get('io');
-    participants.forEach((participantId) => {
+    participants.forEach(participantId => {
       io.to(participantId.toString()).emit('conversation:new', conversation);
     });
 
     res.status(201).json(conversation);
   } catch (error) {
     console.error('Create group error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// DELETE /api/v1/conversations/:id
+// Soft-delete — only hides it for the current user
+export const deleteConversation = async (req, res) => {
+  try {
+    const conversation = await Conversation.findOne({
+      _id: req.params.id,
+      participants: { $in: [req.user._id] },
+    });
+
+    if (!conversation) return res.status(404).json({ message: 'Conversation not found' });
+
+    await Conversation.findByIdAndUpdate(req.params.id, {
+      $addToSet: { deletedBy: req.user._id },
+    });
+
+    res.status(200).json({ message: 'Conversation deleted' });
+  } catch (error) {
+    console.error('Delete conversation error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };

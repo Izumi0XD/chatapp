@@ -10,15 +10,16 @@ export default function Sidebar({ onSelectConversation }) {
   const navigate = useNavigate()
   const { authUser, logout } = useAuthStore()
   const {
-    conversations = [],
-    activeConversation,
-    setActiveConversation,
-    fetchMessages,
-    onlineUsers = [],
-    openOrCreateConversation,
-    createGroupConversation,
-    unreadCounts = {},
-  } = useChatStore()
+  conversations = [],
+  activeConversation,
+  setActiveConversation,
+  fetchMessages,
+  onlineUsers = [],
+  openOrCreateConversation,
+  createGroupConversation,
+  unreadCounts = {},
+  deleteConversation, // ADD THIS
+} = useChatStore()
 
   const [search, setSearch] = useState('')
   const [searchResults, setSearchResults] = useState([])
@@ -197,53 +198,70 @@ export default function Sidebar({ onSelectConversation }) {
           conversations.map(conv => {
             const unread = unreadCounts[conv._id] || 0
             return (
-              <button
-                key={conv._id}
-                onClick={() => handleSelectConversation(conv)}
-                className={`flex w-full items-center gap-3 px-3 py-3 rounded-xl mb-0.5 transition-colors active:bg-gray-100 dark:active:bg-gray-700 ${
-                  activeConversation?._id === conv._id
-                    ? 'bg-primary-50 dark:bg-primary-900/20'
-                    : 'hover:bg-gray-50 dark:hover:bg-gray-800'
-                }`}
-              >
-                {/* Avatar */}
-                <div className="relative flex-shrink-0">
-                  <img src={getConvAvatar(conv)} className="w-12 h-12 rounded-full object-cover"/>
-                  {isConvOnline(conv) && (
-                    <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white dark:border-gray-900"/>
-                  )}
-                  {conv.isGroup && (
-                    <span className="absolute -bottom-0.5 -right-0.5 text-xs">👥</span>
-                  )}
-                </div>
+              <div key={conv._id} className="relative group/conv mb-0.5">
+  <button
+    onClick={() => handleSelectConversation(conv)}
+    className={`flex w-full items-center gap-3 px-3 py-3 rounded-xl transition-colors active:bg-gray-100 dark:active:bg-gray-700 pr-8 ${
+      activeConversation?._id === conv._id
+        ? 'bg-primary-50 dark:bg-primary-900/20'
+        : 'hover:bg-gray-50 dark:hover:bg-gray-800'
+    }`}
+  >
+    {/* Avatar */}
+    <div className="relative flex-shrink-0">
+      <img src={getConvAvatar(conv)} className="w-12 h-12 rounded-full object-cover"/>
+      {isConvOnline(conv) && (
+        <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white dark:border-gray-900"/>
+      )}
+      {conv.isGroup && <span className="absolute -bottom-0.5 -right-0.5 text-xs">👥</span>}
+    </div>
 
-                {/* Info */}
-                <div className="flex-1 min-w-0 text-left">
-                  <div className="flex justify-between items-center">
-                    <p className={`text-sm truncate pr-2 ${unread > 0 ? 'font-bold text-gray-900 dark:text-white' : 'font-medium text-gray-900 dark:text-white'}`}>
-                      {getConvName(conv)}
-                    </p>
-                    <span className="text-xs text-gray-400 flex-shrink-0">
-                      {conv.updatedAt && format(new Date(conv.updatedAt), 'HH:mm')}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between mt-0.5">
-                    <p className={`text-xs truncate pr-2 ${unread > 0 ? 'text-gray-700 dark:text-gray-200 font-medium' : 'text-gray-400'}`}>
-                      {conv.lastMessage
-                        ? conv.lastMessage.isDeleted ? 'Message deleted'
-                          : conv.lastMessage.messageType === 'image' ? '📷 Image'
-                          : conv.lastMessage.messageType === 'system' ? conv.lastMessage.content
-                          : conv.lastMessage.content
-                        : 'No messages yet'}
-                    </p>
-                    {unread > 0 && (
-                      <span className="flex-shrink-0 min-w-[20px] h-5 bg-primary-500 text-white text-xs font-bold rounded-full flex items-center justify-center px-1.5">
-                        {unread > 99 ? '99+' : unread}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </button>
+    {/* Info */}
+    <div className="flex-1 min-w-0 text-left">
+      <div className="flex justify-between items-center">
+        <p className={`text-sm truncate pr-2 ${unread > 0 ? 'font-bold text-gray-900 dark:text-white' : 'font-medium text-gray-900 dark:text-white'}`}>
+          {getConvName(conv)}
+        </p>
+        <span className="text-xs text-gray-400 flex-shrink-0">
+          {conv.updatedAt && format(new Date(conv.updatedAt), 'HH:mm')}
+        </span>
+      </div>
+      <div className="flex items-center justify-between mt-0.5">
+        <p className={`text-xs truncate pr-2 ${unread > 0 ? 'text-gray-700 dark:text-gray-200 font-medium' : 'text-gray-400'}`}>
+          {conv.lastMessage
+            ? conv.lastMessage.isDeleted ? 'Message deleted'
+              : conv.lastMessage.messageType === 'image' ? '📷 Image'
+              : conv.lastMessage.messageType === 'system' ? conv.lastMessage.content
+              : conv.lastMessage.content
+            : 'No messages yet'}
+        </p>
+        {unread > 0 && (
+          <span className="flex-shrink-0 min-w-[20px] h-5 bg-primary-500 text-white text-xs font-bold rounded-full flex items-center justify-center px-1.5">
+            {unread > 99 ? '99+' : unread}
+          </span>
+        )}
+      </div>
+    </div>
+  </button>
+
+  {/* Delete button — appears on hover */}
+  <button
+    onClick={async (e) => {
+      e.stopPropagation()
+      if (!confirm('Remove this conversation?')) return
+      try {
+        await axios.delete('/conversations/' + conv._id)
+        deleteConversation(conv._id)
+      } catch { toast.error('Failed to delete') }
+    }}
+    className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover/conv:opacity-100 p-1.5 rounded-lg text-gray-400 hover:bg-red-100 hover:text-red-500 dark:hover:bg-red-900/30 transition-all"
+  >
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
+    </svg>
+  </button>
+</div>
+              
             )
           })
         )}

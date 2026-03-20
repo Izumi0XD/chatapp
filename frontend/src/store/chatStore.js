@@ -196,6 +196,14 @@ const useChatStore = create((set, get) => ({
     const exists = get().conversations.find(c => c._id === conversation._id)
     if (!exists) set({ conversations: [conversation, ...get().conversations] })
   },
+deleteConversation: (conversationId) => {
+    set({
+      conversations: get().conversations.filter(c => c._id !== conversationId)
+    })
+    if (get().activeConversation?._id === conversationId) {
+      set({ activeConversation: null, messages: [] })
+    }
+  },
 }))
 
 export default useChatStore
