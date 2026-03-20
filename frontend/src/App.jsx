@@ -5,6 +5,7 @@ import useSocket from './hooks/useSocket.js'
 import LoginPage from './pages/LoginPage.jsx'
 import SignupPage from './pages/SignupPage.jsx'
 import ChatPage from './pages/ChatPage.jsx'
+import ProfilePage from './pages/ProfilePage.jsx'
 
 const LoadingScreen = () => (
   <div className="h-screen w-screen flex items-center justify-center bg-gray-900">
@@ -23,6 +24,13 @@ function App() {
     checkAuth()
   }, [])
 
+  // Request notification permission on load
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission()
+    }
+  }, [])
+
   if (isCheckingAuth) return <LoadingScreen />
 
   return (
@@ -31,6 +39,7 @@ function App() {
         <Route path="/" element={authUser ? <ChatPage /> : <Navigate to="/login" replace />} />
         <Route path="/login" element={!authUser ? <LoginPage /> : <Navigate to="/" replace />} />
         <Route path="/signup" element={!authUser ? <SignupPage /> : <Navigate to="/" replace />} />
+        <Route path="/profile" element={authUser ? <ProfilePage /> : <Navigate to="/login" replace />} />
       </Routes>
     </div>
   )
