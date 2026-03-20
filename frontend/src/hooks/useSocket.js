@@ -28,7 +28,7 @@ const useSocket = () => {
 
     socketInstance = io(import.meta.env.VITE_SOCKET_URL, {
       withCredentials: true,
-      transports: ['websocket', 'polling'],
+      transports: ['websocket'],
       auth: {
         token: localStorage.getItem('token'),
       },
@@ -52,6 +52,7 @@ const useSocket = () => {
     socketInstance.on('conversation:new', addConversation)
     socketInstance.on('message:reaction', ({ messageId, reactions }) => {
   useChatStore.getState().updateReactions({ messageId, reactions })
+  
 })
 
     return () => {
