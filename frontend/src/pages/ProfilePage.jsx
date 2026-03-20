@@ -99,6 +99,20 @@ export default function ProfilePage() {
             className="w-full py-2.5 border border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 font-medium rounded-xl transition-colors text-sm">
             Sign out
           </button>
+          <button
+  type="button"
+  onClick={async () => {
+    if (!confirm('Delete your account permanently? This cannot be undone.')) return
+    try {
+      await axios.delete('/users/account')
+      localStorage.removeItem('token')
+      window.location.href = '/login'
+    } catch { toast.error('Failed to delete account') }
+  }}
+  className="w-full py-2.5 border border-red-300 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 font-medium rounded-xl transition-colors text-sm mt-2"
+>
+  Delete account permanently
+</button>
         </form>
       </div>
     </div>

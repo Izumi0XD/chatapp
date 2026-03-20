@@ -7,6 +7,39 @@ import TypingIndicator from './TypingIndicator.jsx'
 import axios from '../utils/axios.js'
 import toast from 'react-hot-toast'
 
+const [showGifPicker, setShowGifPicker] = useState(false)
+const [gifSearch, setGifSearch] = useState('')
+const [gifs, setGifs] = useState([])
+const gifDebounce = useRef(null)
+
+const TENOR_KEY = 'AIzaSyAyimkuYQYF_FXVALexojRGux_QTAM2jGQ' // free Tenor API key
+
+const searchGifs = (q) => {
+  clearTimeout(gifDebounce.current)
+  gifDebounce.current = setTimeout(async () => {
+    try {
+      const term = q.trim() || 'trending'
+      const res = await fetch(
+        'https://tenor.googleapis.com/v2/search?q=' + term +
+        '&key=' + TENOR_KEY + '&limit=12&media_filter=gif,tinygif'
+      )
+      const data = await res.json()
+      setGifs(data.results || [])
+    } catch { setGifs([]) }
+  }, 400)
+}
+
+const sendGif = async (gifUrl) => {
+  setShowGifPicker(false)
+  setGifSearch('')
+  setGifs([])
+  await sendMessage({
+    conversationId: activeConversation._id,
+    content: '',
+    messageType: 'gif',
+    mediaUrl: gifUrl,
+  })
+}
 export default function ChatWindow({ onBack }) {
   const { authUser } = useAuthStore()
   const {
@@ -35,6 +68,10 @@ export default function ChatWindow({ onBack }) {
   const remoteVideoRef = useRef(null)
   const peerRef = useRef(null)
   const localStreamRef = useRef(null)
+
+  useEffect(() => {
+  if (showGifPicker && gifs.length === 0) searchGifs('')
+}, [showGifPicker])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -324,6 +361,32 @@ const endCall = (skipSignal = false) => {
               <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
             </svg>
           </button>
+          {/* Block/Unblock (1-on-1 only) */}
+{!activeConversation.isGroup && otherUser && (
+  <button
+    onClick={async () => {
+      const isBlocked = authUser?.blockedUsers?.includes(otherUser._id)
+      try {
+        if (isBlocked) {
+          await axios.post('/users/unblock/' + otherUser._id)
+          toast.success('User unblocked')
+        } else {
+          await axios.post('/users/block/' + otherUser._id)
+          toast.success('User blocked')
+        }
+        // Refresh auth user
+        const { data } = await axios.get('/auth/me')
+        useAuthStore.getState().checkAuth()
+      } catch { toast.error('Failed') }
+    }}
+    className="p-2 rounded-xl text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+    title={authUser?.blockedUsers?.includes(otherUser._id) ? 'Unblock user' : 'Block user'}
+  >
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
+    </svg>
+  </button>
+)}
 
           {/* Voice + Video call buttons (1-on-1 only) */}
           {!activeConversation.isGroup && (
@@ -367,7 +430,7 @@ const endCall = (skipSignal = false) => {
         {showSearch && searchQuery ? (
           searchResults.length === 0 ? (
             <div className="text-center text-gray-400 py-12 text-sm">No messages found</div>
-          ) : (
+          ) :<div className="flex-1 overflow-y-auto px-4 py-4 space-y-0.5"> (
             searchResults.map(msg => (
               <div key={msg._id} className="p-3 rounded-xl bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-200 dark:border-yellow-800 mb-2">
                 <p className="text-xs text-yellow-600 dark:text-yellow-400 mb-1">{msg.sender?.username} · {new Date(msg.createdAt).toLocaleString()}</p>
@@ -404,22 +467,54 @@ const endCall = (skipSignal = false) => {
       )}
 
       {/* Input */}
-      <div className="px-4 py-3 border-t border-gray-100 dark:border-gray-700 flex items-end gap-2 flex-shrink-0">
-        <button onClick={() => fileInputRef.current?.click()} disabled={isUploading}
-          className="p-2 rounded-xl text-gray-400 hover:text-primary-500 hover:bg-gray-100 dark:hover:bg-gray-700 flex-shrink-0">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-          </svg>
+      {/* Input */}
+<div className="px-4 py-3 border-t border-gray-100 dark:border-gray-700 flex items-end gap-2 flex-shrink-0">
+  <button onClick={() => fileInputRef.current?.click()} disabled={isUploading}
+    className="p-2 rounded-xl text-gray-400 hover:text-primary-500 hover:bg-gray-100 dark:hover:bg-gray-700 flex-shrink-0">
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+    </svg>
+  </button>
+  <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload}/>
+
+  {/* GIF button */}
+  <button onClick={() => setShowGifPicker(!showGifPicker)}
+    className="p-2 rounded-xl text-gray-400 hover:text-primary-500 hover:bg-gray-100 dark:hover:bg-gray-700 flex-shrink-0 text-xs font-bold">
+    GIF
+  </button>
+
+  <textarea ref={textareaRef} value={text} onChange={handleTextChange} onKeyDown={handleKeyDown}
+    placeholder="Type a message..." rows={1}
+    className="flex-1 px-4 py-2.5 rounded-2xl bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none overflow-hidden"/>
+  <button onClick={handleSend} disabled={!text.trim()}
+    className="p-2.5 bg-primary-500 hover:bg-primary-600 disabled:opacity-40 text-white rounded-2xl flex-shrink-0 transition-colors">
+    <svg className="w-5 h-5 rotate-90" fill="currentColor" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+  </button>
+</div>
+
+{/* GIF Picker */}
+{showGifPicker && (
+  <div className="border-t border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-900 p-3">
+    <input
+      value={gifSearch}
+      onChange={e => { setGifSearch(e.target.value); searchGifs(e.target.value) }}
+      placeholder="Search GIFs..."
+      className="w-full px-3 py-2 rounded-xl bg-gray-100 dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 mb-2"
+    />
+    <div className="grid grid-cols-3 gap-1 max-h-48 overflow-y-auto">
+      {gifs.map(gif => (
+        <button key={gif.id} onClick={() => sendGif(gif.media_formats?.gif?.url || gif.url)}
+          className="rounded-lg overflow-hidden hover:opacity-80 transition-opacity">
+          <img src={gif.media_formats?.tinygif?.url || gif.url} className="w-full h-20 object-cover"/>
         </button>
-        <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload}/>
-        <textarea ref={textareaRef} value={text} onChange={handleTextChange} onKeyDown={handleKeyDown}
-          placeholder="Type a message..." rows={1}
-          className="flex-1 px-4 py-2.5 rounded-2xl bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none overflow-hidden"/>
-        <button onClick={handleSend} disabled={!text.trim()}
-          className="p-2.5 bg-primary-500 hover:bg-primary-600 disabled:opacity-40 text-white rounded-2xl flex-shrink-0 transition-colors">
-          <svg className="w-5 h-5 rotate-90" fill="currentColor" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
-        </button>
-      </div>
+      ))}
+      {gifs.length === 0 && gifSearch && (
+        <p className="col-span-3 text-center text-gray-400 text-xs py-4">No GIFs found</p>
+      )}
+    </div>
+  </div>
+)}
+      
 
       {/* ── INCOMING CALL ── */}
       {callState === 'incoming' && incomingCall && (
