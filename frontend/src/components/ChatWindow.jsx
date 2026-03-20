@@ -7,7 +7,7 @@ import TypingIndicator from './TypingIndicator.jsx'
 import axios from '../utils/axios.js'
 import toast from 'react-hot-toast'
 
-export default function ChatWindow({ onOpenSidebar }) {
+export default function ChatWindow({ onBack }) {
   const { authUser } = useAuthStore()
   const {
     activeConversation, messages, isLoadingMessages,
@@ -290,7 +290,14 @@ const endCall = (skipSignal = false) => {
 
       {/* Header */}
       <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700 flex items-center gap-3 flex-shrink-0">
-        <button onClick={onOpenSidebar} className="md:hidden p-1 text-gray-500">←</button>
+        <button
+  onClick={onBack}
+  className="md:hidden p-2 -ml-1 rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 active:bg-gray-100 flex-shrink-0"
+>
+  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7"/>
+  </svg>
+</button>
         <div className="relative">
           <img
             src={activeConversation.isGroup
