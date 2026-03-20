@@ -41,7 +41,7 @@ const messageSchema = new mongoose.Schema(
     // 'system' → render gray system notice (e.g. "John joined the group")
     messageType: {
       type: String,
-      enum: ['text', 'image', 'file', 'audio', 'system'],
+      enum: ['text', 'image', 'file', 'audio', 'system', 'gif'],
       default: 'text',
     },
 
