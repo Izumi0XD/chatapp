@@ -76,7 +76,10 @@ export const initSocket = (io) => {
       }
     });
 
+    // ── Call signaling ──────────────────────────────────────
+    // Track active calls: { conversationId, callType, startedAt, callerId }
     socket.on('call:signal', async ({ to, signal, type, callType, conversationId }) => {
+      // Forward signal to recipient — always include callType so receiver knows video vs audio
       io.to(to).emit('call:signal', {
         from: userId,
         fromUsername: socket.user.username,
@@ -87,6 +90,7 @@ export const initSocket = (io) => {
         conversationId,
       });
 
+      // Save call history message when call ends
       if (type === 'end' && conversationId) {
         try {
           const conv = await Conversation.findOne({
@@ -95,11 +99,14 @@ export const initSocket = (io) => {
           });
 
           if (conv) {
+            // Determine if it was missed (no answer) or completed
+            // We store a system message visible to both participants
             const callMsg = await Message.create({
               conversation: conversationId,
               sender: userId,
               content: (callType === 'audio' ? '📞' : '📹') + ' ' +
-                       socket.user.username + ' ended call',
+                       socket.user.username + ' ' +
+                       (signal === 'missed' ? 'missed call' : 'ended call'),
               messageType: 'system',
               readBy: [userId],
             });
@@ -110,6 +117,7 @@ export const initSocket = (io) => {
               lastMessage: callMsg._id,
             });
 
+            // Emit to both participants
             io.to(conversationId).emit('message:new', callMsg);
           }
         } catch (err) {
