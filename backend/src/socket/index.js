@@ -4,6 +4,8 @@ import Message from '../models/Message.model.js';
 import Conversation from '../models/Conversation.model.js';
 
 const onlineUsers = new Map();
+// Track active calls: callKey -> { startedAt, callType, conversationId, answered }
+const activeCalls = new Map();
 
 export const initSocket = (io) => {
 
@@ -16,13 +18,10 @@ export const initSocket = (io) => {
           ?.split(';')
           .find(c => c.trim().startsWith('jwt='))
           ?.split('=')[1];
-
       if (!token) return next(new Error('Authentication required'));
-
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       const user = await User.findById(decoded.userId).select('-password');
       if (!user) return next(new Error('User not found'));
-
       socket.user = user;
       next();
     } catch (error) {
@@ -76,10 +75,8 @@ export const initSocket = (io) => {
       }
     });
 
-    // ── Call signaling ──────────────────────────────────────
-    // Track active calls: { conversationId, callType, startedAt, callerId }
     socket.on('call:signal', async ({ to, signal, type, callType, conversationId }) => {
-      // Forward signal to recipient — always include callType so receiver knows video vs audio
+      // Always forward signal to recipient
       io.to(to).emit('call:signal', {
         from: userId,
         fromUsername: socket.user.username,
@@ -90,34 +87,84 @@ export const initSocket = (io) => {
         conversationId,
       });
 
-      // Save call history message when call ends
+      // Track call start when offer is sent
+      if (type === 'offer' && conversationId) {
+        const callKey = [userId, to].sort().join('_') + '_' + conversationId;
+        activeCalls.set(callKey, {
+          startedAt: Date.now(),
+          callType: callType || 'video',
+          conversationId,
+          callerId: userId,
+          answered: false,
+        });
+      }
+
+      // Mark call as answered when answer signal received
+      if (type === 'answer' && conversationId) {
+        for (const [key, call] of activeCalls.entries()) {
+          if (call.conversationId === conversationId) {
+            call.answered = true;
+            call.answeredAt = Date.now();
+            break;
+          }
+        }
+      }
+
+      // Save call history when call ends
       if (type === 'end' && conversationId) {
         try {
+          // Find the call record
+          let callRecord = null;
+          let callKey = null;
+          for (const [key, call] of activeCalls.entries()) {
+            if (call.conversationId === conversationId) {
+              callRecord = call;
+              callKey = key;
+              break;
+            }
+          }
+
+          // Clean up call record
+          if (callKey) activeCalls.delete(callKey);
+
           const conv = await Conversation.findOne({
             _id: conversationId,
             participants: { $in: [userId] },
           });
 
           if (conv) {
-            // Determine if it was missed (no answer) or completed
-            // We store a system message visible to both participants
+            const emoji = (callRecord?.callType === 'audio' || callType === 'audio') ? '📞' : '📹'
+            const callTypeLabel = (callRecord?.callType === 'audio' || callType === 'audio') ? 'Voice' : 'Video'
+
+            let content
+            if (!callRecord || !callRecord.answered) {
+              // Call was never answered = missed call
+              content = emoji + ' Missed ' + callTypeLabel.toLowerCase() + ' call'
+            } else {
+              // Calculate duration
+              const durationMs = Date.now() - (callRecord.answeredAt || callRecord.startedAt)
+              const totalSeconds = Math.floor(durationMs / 1000)
+              const minutes = Math.floor(totalSeconds / 60)
+              const seconds = totalSeconds % 60
+              const duration = minutes > 0
+                ? minutes + 'm ' + seconds + 's'
+                : seconds + 's'
+              content = emoji + ' ' + callTypeLabel + ' call · ' + duration
+            }
+
             const callMsg = await Message.create({
               conversation: conversationId,
               sender: userId,
-              content: (callType === 'audio' ? '📞' : '📹') + ' ' +
-                       socket.user.username + ' ' +
-                       (signal === 'missed' ? 'missed call' : 'ended call'),
+              content,
               messageType: 'system',
               readBy: [userId],
             });
 
             await callMsg.populate('sender', 'username avatar');
-
             await Conversation.findByIdAndUpdate(conversationId, {
               lastMessage: callMsg._id,
             });
 
-            // Emit to both participants
             io.to(conversationId).emit('message:new', callMsg);
           }
         } catch (err) {
