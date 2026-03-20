@@ -192,3 +192,24 @@ export const addReaction = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+export const sendSystemMessage = async (conversationId, content, io) => {
+  try {
+    const message = await Message.create({
+      conversation: conversationId,
+      sender: null, // system message
+      content,
+      messageType: 'system',
+      readBy: [],
+    });
+
+    await Conversation.findByIdAndUpdate(conversationId, {
+      lastMessage: message._id,
+    });
+
+    io.to(conversationId).emit('message:new', message);
+
+    return message;
+  } catch (error) {
+    console.error('System message error:', error);
+  }
+};

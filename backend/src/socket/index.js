@@ -17,16 +17,11 @@ export const initSocket = (io) => {
           .find(c => c.trim().startsWith('jwt='))
           ?.split('=')[1];
 
-      if (!token) {
-        return next(new Error('Authentication required'));
-      }
+      if (!token) return next(new Error('Authentication required'));
 
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       const user = await User.findById(decoded.userId).select('-password');
-
-      if (!user) {
-        return next(new Error('User not found'));
-      }
+      if (!user) return next(new Error('User not found'));
 
       socket.user = user;
       next();
@@ -40,35 +35,22 @@ export const initSocket = (io) => {
     console.log('Socket connected: ' + socket.user.username + ' (' + socket.id + ')');
 
     socket.join(userId);
-
     onlineUsers.set(userId, socket.id);
-
     await User.findByIdAndUpdate(userId, { isOnline: true });
-
     io.emit('user:online', { userId, isOnline: true });
-
     socket.emit('users:online', Array.from(onlineUsers.keys()));
 
     const conversations = await Conversation.find({
       participants: { $in: [userId] },
     }).select('_id');
+    conversations.forEach(conv => socket.join(conv._id.toString()));
 
-    conversations.forEach((conv) => {
-      socket.join(conv._id.toString());
-    });
-
-    socket.on('conversation:join', (conversationId) => {
-      socket.join(conversationId);
-    });
-
-    socket.on('conversation:leave', (conversationId) => {
-      socket.leave(conversationId);
-    });
+    socket.on('conversation:join', (conversationId) => socket.join(conversationId));
+    socket.on('conversation:leave', (conversationId) => socket.leave(conversationId));
 
     socket.on('typing:start', ({ conversationId }) => {
       socket.to(conversationId).emit('typing:update', {
-        conversationId,
-        userId,
+        conversationId, userId,
         username: socket.user.username,
         isTyping: true,
       });
@@ -76,8 +58,7 @@ export const initSocket = (io) => {
 
     socket.on('typing:stop', ({ conversationId }) => {
       socket.to(conversationId).emit('typing:update', {
-        conversationId,
-        userId,
+        conversationId, userId,
         username: socket.user.username,
         isTyping: false,
       });
@@ -86,49 +67,62 @@ export const initSocket = (io) => {
     socket.on('message:read', async ({ conversationId }) => {
       try {
         await Message.updateMany(
-          {
-            conversation: conversationId,
-            readBy: { $nin: [userId] },
-            sender: { $ne: userId },
-          },
+          { conversation: conversationId, readBy: { $nin: [userId] }, sender: { $ne: userId } },
           { $addToSet: { readBy: userId } }
         );
-
-        socket.to(conversationId).emit('message:read', {
-          conversationId,
-          userId,
-          readAt: new Date(),
-        });
+        socket.to(conversationId).emit('message:read', { conversationId, userId, readAt: new Date() });
       } catch (error) {
         console.error('Read receipt error:', error);
       }
     });
 
-    socket.on('call:signal', ({ to, signal, type }) => {
+    socket.on('call:signal', async ({ to, signal, type, callType, conversationId }) => {
       io.to(to).emit('call:signal', {
         from: userId,
         fromUsername: socket.user.username,
         fromAvatar: socket.user.avatar,
         signal,
         type,
+        callType: callType || 'video',
+        conversationId,
       });
+
+      if (type === 'end' && conversationId) {
+        try {
+          const conv = await Conversation.findOne({
+            _id: conversationId,
+            participants: { $in: [userId] },
+          });
+
+          if (conv) {
+            const callMsg = await Message.create({
+              conversation: conversationId,
+              sender: userId,
+              content: (callType === 'audio' ? '📞' : '📹') + ' ' +
+                       socket.user.username + ' ended call',
+              messageType: 'system',
+              readBy: [userId],
+            });
+
+            await callMsg.populate('sender', 'username avatar');
+
+            await Conversation.findByIdAndUpdate(conversationId, {
+              lastMessage: callMsg._id,
+            });
+
+            io.to(conversationId).emit('message:new', callMsg);
+          }
+        } catch (err) {
+          console.error('Call message error:', err);
+        }
+      }
     });
 
     socket.on('disconnect', async () => {
       console.log('Socket disconnected: ' + socket.user.username);
-
       onlineUsers.delete(userId);
-
-      await User.findByIdAndUpdate(userId, {
-        isOnline: false,
-        lastSeen: new Date(),
-      });
-
-      io.emit('user:offline', {
-        userId,
-        isOnline: false,
-        lastSeen: new Date(),
-      });
+      await User.findByIdAndUpdate(userId, { isOnline: false, lastSeen: new Date() });
+      io.emit('user:offline', { userId, isOnline: false, lastSeen: new Date() });
     });
   });
 };
