@@ -445,14 +445,14 @@ export default function ChatWindow({ onBack }) {
 
       {/* GIF Picker */}
       {showGifPicker && (
-        <div className="border-t border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 flex-shrink-0">
+        <div className="border-t border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 flex-shrink-0 max-h-64 flex flex-col">
           <input
             value={gifSearch}
             onChange={e => { setGifSearch(e.target.value); searchGifs(e.target.value) }}
             placeholder="Search GIFs..."
             className="w-full px-3 py-2 rounded-xl bg-gray-100 dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 mb-2"
           />
-          <div className="grid grid-cols-3 gap-1 max-h-48 overflow-y-auto">
+          <div className="grid grid-cols-3 gap-1 overflow-y-auto flex-1 min-h-0" style={{maxHeight: '160px'}}>
             {gifs.map(gif => (
   <button key={gif.id} onClick={() => sendGif(gif.images?.original?.url)}
     className="rounded-lg overflow-hidden hover:opacity-80 transition-opacity">
