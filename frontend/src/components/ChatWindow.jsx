@@ -6,6 +6,8 @@ import MessageBubble from './MessageBubble.jsx'
 import TypingIndicator from './TypingIndicator.jsx'
 import axios from '../utils/axios.js'
 import toast from 'react-hot-toast'
+import ProfileModal from './ProfileModal.jsx'
+import { format } from 'date-fns'
 
 const GIPHY_KEY = 'M5SjFIlAsidQcM08PgDe0wDqleDd7Bzf'
 
@@ -30,6 +32,8 @@ export default function ChatWindow({ onBack }) {
   const [showGifPicker, setShowGifPicker] = useState(false)
   const [gifSearch, setGifSearch] = useState('')
   const [gifs, setGifs] = useState([])
+  const [viewingProfile, setViewingProfile] = useState(null)
+
 
   const typingTimeoutRef = useRef(null)
   const bottomRef = useRef(null)
@@ -319,15 +323,21 @@ export default function ChatWindow({ onBack }) {
           </svg>
         </button>
 
-        <div className="relative">
-          <img
-            src={activeConversation.isGroup
-              ? (activeConversation.groupAvatar || 'https://ui-avatars.com/api/?name=' + activeConversation.groupName + '&background=random')
-              : (otherUser?.avatar || 'https://ui-avatars.com/api/?name=' + otherUser?.username + '&background=random')}
-            className="w-9 h-9 rounded-full object-cover"
-          />
-          {isOtherOnline && <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-white dark:border-gray-900"/>}
-        </div>
+        <div className="relative cursor-pointer" onClick={async () => {
+  if (!otherUser) return
+  try {
+    const { data } = await axios.get('/users/' + otherUser._id)
+    setViewingProfile(data)
+  } catch {}
+}}>
+  <img
+    src={activeConversation.isGroup
+      ? (activeConversation.groupAvatar || 'https://ui-avatars.com/api/?name=' + activeConversation.groupName + '&background=random')
+      : (otherUser?.avatar || 'https://ui-avatars.com/api/?name=' + otherUser?.username + '&background=random')}
+    className="w-9 h-9 rounded-full object-cover hover:opacity-80 transition-opacity"
+  />
+  {isOtherOnline && <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-white dark:border-gray-900"/>}
+</div>
 
         <div className="flex-1 min-w-0">
           <h2 className="font-semibold text-sm text-gray-900 dark:text-white truncate">
@@ -522,6 +532,8 @@ export default function ChatWindow({ onBack }) {
           </div>
         </div>
       )}
+
+      {viewingProfile && <ProfileModal user={viewingProfile} onClose={() => setViewingProfile(null)} />}
 
       {/* ACTIVE / CALLING OVERLAY */}
       {(callState === 'active' || callState === 'calling') && (

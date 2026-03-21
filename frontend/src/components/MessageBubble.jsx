@@ -4,14 +4,56 @@ import useAuthStore from '../store/authStore.js'
 import axios from '../utils/axios.js'
 import useChatStore from '../store/chatStore.js'
 import toast from 'react-hot-toast'
+import ProfileModal from './ProfileModal.jsx'
 
 const EMOJI_LIST = ['👍', '❤️', '😂', '😮', '😢', '🔥']
 
+function ProfileModal({ user, onClose }) {
+  if (!user) return null
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4" onClick={onClose}>
+      <div className="bg-white dark:bg-gray-800 rounded-t-3xl sm:rounded-2xl w-full sm:max-w-sm shadow-xl overflow-hidden" onClick={e => e.stopPropagation()}>
+        {/* Cover / avatar area */}
+        <div className="bg-gradient-to-br from-primary-400 to-primary-600 h-24 relative">
+          <button onClick={onClose} className="absolute top-3 right-3 p-1.5 rounded-full bg-black/20 text-white hover:bg-black/30">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+          <img
+            src={user.avatar || 'https://ui-avatars.com/api/?name=' + user.username + '&background=random&size=128'}
+            className="w-20 h-20 rounded-full object-cover border-4 border-white absolute -bottom-8 left-1/2 -translate-x-1/2 shadow-lg"
+          />
+        </div>
+
+        <div className="pt-12 pb-6 px-6 text-center">
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white">{user.username}</h2>
+          {user.isOnline
+            ? <span className="inline-flex items-center gap-1 text-xs text-green-500 font-medium mt-1"><span className="w-1.5 h-1.5 bg-green-500 rounded-full"/>Online</span>
+            : <span className="text-xs text-gray-400 mt-1 block">Offline</span>
+          }
+          {user.bio && (
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-3 leading-relaxed">{user.bio}</p>
+          )}
+          {!user.bio && (
+            <p className="text-sm text-gray-400 italic mt-3">No bio yet</p>
+          )}
+          <p className="text-xs text-gray-400 mt-4">
+            Joined {user.createdAt ? format(new Date(user.createdAt), 'MMM yyyy') : '—'}
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function MessageBubble({ message }) {
   const { authUser } = useAuthStore()
-  const { updateMessage, removeMessage, updateReactions, setReplyingTo, conversations, openOrCreateConversation, setActiveConversation, fetchMessages } = useChatStore()
+  const { updateMessage, removeMessage, updateReactions, setReplyingTo, conversations } = useChatStore()
   const [showMenu, setShowMenu] = useState(false)
   const [showForwardModal, setShowForwardModal] = useState(false)
+  const [showProfile, setShowProfile] = useState(false)
+  const [profileUser, setProfileUser] = useState(null)
   const [isEditing, setIsEditing] = useState(false)
   const [editContent, setEditContent] = useState(message.content)
   const menuRef = useRef(null)
@@ -20,13 +62,21 @@ export default function MessageBubble({ message }) {
 
   useEffect(() => {
     const handler = (e) => {
-      if (menuRef.current && !menuRef.current.contains(e.target)) {
-        setShowMenu(false)
-      }
+      if (menuRef.current && !menuRef.current.contains(e.target)) setShowMenu(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [])
+
+  const handleAvatarClick = async (e) => {
+    e.stopPropagation()
+    if (!message.sender?._id) return
+    try {
+      const { data } = await axios.get('/users/' + message.sender._id)
+      setProfileUser(data)
+      setShowProfile(true)
+    } catch { toast.error('Could not load profile') }
+  }
 
   const handleDelete = async () => {
     try {
@@ -53,10 +103,7 @@ export default function MessageBubble({ message }) {
     setShowMenu(false)
   }
 
-  const handleReply = () => {
-    setReplyingTo(message)
-    setShowMenu(false)
-  }
+  const handleReply = () => { setReplyingTo(message); setShowMenu(false) }
 
   const handleForward = async (conv) => {
     try {
@@ -72,7 +119,6 @@ export default function MessageBubble({ message }) {
     setShowMenu(false)
   }
 
-  // System message
   if (message.messageType === 'system') {
     return (
       <div className="flex justify-center my-3">
@@ -86,9 +132,7 @@ export default function MessageBubble({ message }) {
   if (message.isDeleted) {
     return (
       <div className={`flex ${isMine ? 'justify-end' : 'justify-start'} mb-1`}>
-        <span className="text-xs text-gray-400 italic px-4 py-2 bg-gray-100 dark:bg-gray-800 rounded-2xl">
-          Message deleted
-        </span>
+        <span className="text-xs text-gray-400 italic px-4 py-2 bg-gray-100 dark:bg-gray-800 rounded-2xl">Message deleted</span>
       </div>
     )
   }
@@ -105,29 +149,31 @@ export default function MessageBubble({ message }) {
         {!isMine && (
           <img
             src={message.sender?.avatar || 'https://ui-avatars.com/api/?name=' + (message.sender?.username || 'U') + '&background=random'}
-            className="w-7 h-7 rounded-full object-cover mr-2 mt-auto flex-shrink-0"
+            className="w-7 h-7 rounded-full object-cover mr-2 mt-auto flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+            onClick={handleAvatarClick}
           />
         )}
 
         <div className="max-w-xs lg:max-w-md relative" ref={menuRef}>
           {!isMine && (
-            <p className="text-xs text-gray-400 mb-0.5 ml-1">{message.sender?.username}</p>
+            <p
+              className="text-xs text-gray-400 mb-0.5 ml-1 cursor-pointer hover:text-primary-500 transition-colors"
+              onClick={handleAvatarClick}
+            >
+              {message.sender?.username}
+            </p>
           )}
 
           {message.replyTo && !message.replyTo.isDeleted && (
             <div className={`mb-1 px-3 py-1.5 rounded-xl border-l-4 border-primary-400 bg-gray-100 dark:bg-gray-800 text-xs text-gray-500 dark:text-gray-400 ${isMine ? 'mr-1' : 'ml-1'}`}>
               <span className="font-medium text-primary-500">{message.replyTo.sender?.username}</span>
-              <p className="truncate mt-0.5">
-                {message.replyTo.messageType === 'image' ? '📷 Image' : message.replyTo.content}
-              </p>
+              <p className="truncate mt-0.5">{message.replyTo.messageType === 'image' ? '📷 Image' : message.replyTo.content}</p>
             </div>
           )}
 
           <div
             className={`relative px-4 py-2 rounded-2xl cursor-pointer ${
-              isMine
-                ? 'bg-primary-500 text-white rounded-br-sm'
-                : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white rounded-bl-sm'
+              isMine ? 'bg-primary-500 text-white rounded-br-sm' : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white rounded-bl-sm'
             }`}
             onClick={() => setShowMenu(!showMenu)}
           >
@@ -148,9 +194,7 @@ export default function MessageBubble({ message }) {
                   />
                 )}
                 {message.messageType === 'gif' && message.mediaUrl && (
-                  <img src={message.mediaUrl} alt="gif"
-                    className="rounded-xl max-w-full mb-1"
-                  />
+                  <img src={message.mediaUrl} alt="gif" className="rounded-xl max-w-full mb-1"/>
                 )}
                 {message.content && (
                   <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
@@ -200,7 +244,6 @@ export default function MessageBubble({ message }) {
                     className="text-xl hover:scale-125 transition-transform p-0.5">{emoji}</button>
                 ))}
               </div>
-
               <button onClick={handleReply}
                 className="flex items-center gap-2 w-full text-left px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm text-gray-700 dark:text-gray-200">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -208,7 +251,6 @@ export default function MessageBubble({ message }) {
                 </svg>
                 Reply
               </button>
-
               <button onClick={() => { setShowForwardModal(true); setShowMenu(false) }}
                 className="flex items-center gap-2 w-full text-left px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm text-gray-700 dark:text-gray-200">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -216,7 +258,6 @@ export default function MessageBubble({ message }) {
                 </svg>
                 Forward
               </button>
-
               {isMine && (
                 <>
                   <button onClick={() => { setIsEditing(true); setShowMenu(false) }}
@@ -270,6 +311,9 @@ export default function MessageBubble({ message }) {
           </div>
         </div>
       )}
+
+      {/* Profile modal */}
+      {showProfile && <ProfileModal user={profileUser} onClose={() => setShowProfile(false)} />}
     </>
   )
 }
