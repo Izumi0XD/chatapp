@@ -308,7 +308,7 @@ export default function ChatWindow({ onBack }) {
   if (!activeConversation) return null
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-white dark:bg-gray-900">
+    <div className="flex flex-col bg-white dark:bg-gray-900" style={{height: '100dvh', overflow: 'hidden'}}>
 
       {/* Header */}
       <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700 flex items-center gap-3 flex-shrink-0 sticky top-0 z-10 bg-white dark:bg-gray-900">
