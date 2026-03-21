@@ -12,9 +12,7 @@ export default function ChatPage() {
     fetchConversations()
   }, [])
 
-  const handleSelectConversation = () => {
-    setShowSidebar(false)
-  }
+  const handleSelectConversation = () => setShowSidebar(false)
 
   const handleBackToSidebar = () => {
     setActiveConversation(null)
@@ -22,7 +20,8 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="h-screen flex overflow-hidden bg-white dark:bg-gray-900">
+    <div className="fixed inset-0 flex bg-white dark:bg-gray-900">
+      {/* Sidebar */}
       <div className={`
         flex-shrink-0 border-r border-gray-200 dark:border-gray-700
         w-full md:w-80
@@ -32,6 +31,7 @@ export default function ChatPage() {
         <Sidebar onSelectConversation={handleSelectConversation} />
       </div>
 
+      {/* Chat area */}
       <div className={`
         flex-1 flex flex-col min-w-0
         ${!showSidebar ? 'flex' : 'hidden'}
